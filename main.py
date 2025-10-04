@@ -37,6 +37,7 @@ vectorstore: VectorStore | None = None
 processed_documents: list = []
 
 # --- Step 1: Upload PDFs ---
+# --- Step 1: Upload PDFs ---
 @app.post("/upload-multiple")
 async def upload_multiple(files: List[UploadFile] = File(...)):
     global embedding_manager, vectorstore, processed_documents
@@ -45,7 +46,7 @@ async def upload_multiple(files: List[UploadFile] = File(...)):
         return JSONResponse({"error": "No files uploaded."}, status_code=400)
 
     try:
-        # --- Clear existing uploads safely ---
+        # --- Clear existing uploads ---
         if os.path.exists(UPLOAD_FOLDER):
             shutil.rmtree(UPLOAD_FOLDER)
         os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -61,21 +62,32 @@ async def upload_multiple(files: List[UploadFile] = File(...)):
                 f.write(content)
             uploaded_files.append({"filename": file.filename, "path": file_path})
 
-        print(f"Uploaded {len(uploaded_files)} files.")
-
-        # Process all PDFs
+        # Process PDFs
         documents = Preprocessing.process_all_pdfs(UPLOAD_FOLDER)
         chunks = Preprocessing.split_documents(documents)
 
         # Initialize embedding manager and vector store
-        embedding_manager = EmbeddingManager()
-        vectorstore = VectorStore()
+        if embedding_manager is None:
+            # Lazy load model
+            embedding_manager = EmbeddingManager(model_name="paraphrase-MiniLM-L3-v2")
+        if vectorstore is None:
+            vectorstore = VectorStore()
 
-        texts = [doc.page_content for doc in chunks]
-        embeddings = embedding_manager.generate_embeddings(texts)
-        vectorstore.add_documents(chunks, embeddings)
+        # --- Batch embedding generation ---
+        import gc
+        batch_size = 10  # tweak if needed
+        for i in range(0, len(chunks), batch_size):
+            batch = chunks[i:i+batch_size]
+            texts = [c.page_content for c in batch]
 
-        processed_documents = documents
+            embeddings = embedding_manager.generate_embeddings(texts)
+            vectorstore.add_documents(batch, embeddings)
+
+            # Free memory
+            del batch, texts, embeddings
+            gc.collect()
+
+        processed_documents = documents  # store for reference
 
         return {
             "message": "Files uploaded and processed successfully",
