@@ -65,30 +65,20 @@ async def upload_multiple(files: List[UploadFile] = File(...)):
         # Process PDFs
         documents = Preprocessing.process_all_pdfs(UPLOAD_FOLDER)
         chunks = Preprocessing.split_documents(documents)
+        print(chunks)
 
-        # Initialize embedding manager and vector store
+        # Check if embedding_manager exists; if not, create it
         if embedding_manager is None:
-            # Lazy load model
-            embedding_manager = EmbeddingManager(model_name="paraphrase-MiniLM-L3-v2")
+            embedding_manager = EmbeddingManager()
+
+        # Check if vector_store exists; if not, create it
         if vectorstore is None:
             vectorstore = VectorStore()
-
-        # --- Batch embedding generation ---
-        import gc
-        batch_size = 10  # tweak if needed
-        for i in range(0, len(chunks), batch_size):
-            batch = chunks[i:i+batch_size]
-            texts = [c.page_content for c in batch]
-
-            embeddings = embedding_manager.generate_embeddings(texts)
-            vectorstore.add_documents(batch, embeddings)
-
-            # Free memory
-            del batch, texts, embeddings
-            gc.collect()
-
-        processed_documents = documents  # store for reference
-
+            
+        texts_to_embed = [doc.page_content for doc in chunks]
+        embeddings=embedding_manager.generate_embeddings(texts_to_embed)
+        vectorstore.add_documents(chunks,embeddings)
+    
         return {
             "message": "Files uploaded and processed successfully",
             "files": [f["filename"] for f in uploaded_files]

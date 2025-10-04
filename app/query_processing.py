@@ -16,6 +16,7 @@ from groq import Groq
 from transformers import AutoTokenizer, AutoModel
 import torch
 import numpy as np
+from langchain_cohere.embeddings import CohereEmbeddings
 
 
 class Preprocessing:
@@ -72,86 +73,114 @@ class Preprocessing:
 
 
 class EmbeddingManager:
-    """Handles document embedding generation using a Hugging Face SentenceTransformer"""
+  
+    
 
-    def __init__(self, model_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
-        """
-        Initialize the embedding manager.
+    def __init__(self,model_name:str = "embed-multilingual-v3.0"):
 
-        Args:
-            model_name: HuggingFace model name for sentence embeddings.
-        """
         self.model_name = model_name
         self.model = None
         self._load_model()
 
     def _load_model(self):
-        """Load the SentenceTransformer model (lightweight, free, open-source)"""
-        try:
-            print(f"Loading embedding model: {self.model_name}")
-            self.model = SentenceTransformer(self.model_name, device="cpu")  # force CPU
-            print(f"Model loaded successfully. Embedding dimension: {self.model.get_sentence_embedding_dimension()}")
-        except Exception as e:
-            print(f"Error loading model {self.model_name}: {e}")
-            raise
 
+        print(f"Loading embedding model: {self.model_name}")
+        self.model = CohereEmbeddings(
+            model=self.model_name,
+            cohere_api_key="WBdoRkET5pSXZ2dC6nlu3ZxgDSFL0L7A0MmrMipL"  # better to use env var!
+        )
+        print("Model loaded successfully.")
     def generate_embeddings(self, texts: List[str]) -> np.ndarray:
-        """
-        Generate embeddings for a list of texts.
 
-        Args:
-            texts: List of text strings to embed.
-
-        Returns:
-            numpy array of embeddings with shape (len(texts), embedding_dim)
-        """
         if not self.model:
             raise ValueError("Model not loaded")
-
-        # Ensure all inputs are strings
-        texts = [str(t) for t in texts]
-
+        
         print(f"Generating embeddings for {len(texts)} texts...")
-        embeddings = self.model.encode(texts, show_progress_bar=True)
+        embeddings = self.model.embed_documents(texts)
         embeddings = np.array(embeddings)
-        print(f"Generated embeddings with shape: {embeddings.shape}")
+        print("embedding done")
+        print(type(embeddings))
+        print(embeddings.shape[1])
+                # print(f"Generated embeddings with shape: {embeddings.shape}")
         return embeddings
 
-
-
 class VectorStore:
-    """Manages document embeddings in a ChromaDB vector store"""
+    """Manages document embeddings in a ChromaDB vector store, automatically handling dimension mismatches."""
 
-    def __init__(self, collection_name: str = "pdf_documents", persist_directory: str = None):
+    def __init__(self, collection_name: str = "pdf_documents", persist_directory: str = "vector_store"):
+        """
+        Initialize the vector store.
+
+        Args:
+            collection_name: Name of the ChromaDB collection
+            persist_directory: Directory to persist the vector store
+        """
         self.collection_name = collection_name
-        if persist_directory is None:
-            self.persist_directory = os.path.join(os.getcwd(), "vector_store")
-        else:
-            self.persist_directory = persist_directory
+        self.persist_directory = persist_directory
         self.client = None
         self.collection = None
+        self.embedding_dim = None
         self._initialize_store()
 
     def _initialize_store(self):
+        """Initialize ChromaDB client and collection"""
         try:
             os.makedirs(self.persist_directory, exist_ok=True)
             self.client = chromadb.PersistentClient(path=self.persist_directory)
-            self.collection = self.client.get_or_create_collection(
-                name=self.collection_name,
-                metadata={"description": "PDF document embeddings for RAG"}
-            )
-            print(f"Vector store initialized. Collection: {self.collection_name}")
-            print(f"Existing documents in collection: {self.collection.count()}")
 
+            existing_collections = [c.name for c in self.client.list_collections()]
+            if self.collection_name in existing_collections:
+                self.collection = self.client.get_collection(self.collection_name)
+                print(f"Found existing collection: {self.collection_name}")
+            else:
+                self.collection = self.client.create_collection(
+                    name=self.collection_name,
+                    metadata={"description": "PDF document embeddings for RAG"}
+                )
+                print(f"Created new collection: {self.collection_name}")
+
+            print(f"Vector store initialized. Documents in collection: {self.collection.count()}")
         except Exception as e:
             print(f"Error initializing vector store: {e}")
             raise
 
     def add_documents(self, documents: List[Any], embeddings: np.ndarray):
+        """
+        Add documents and their embeddings to the vector store.
+
+        Args:
+            documents: List of LangChain Document objects
+            embeddings: Corresponding embeddings for the documents (np.ndarray)
+        """
         if len(documents) != len(embeddings):
             raise ValueError("Number of documents must match number of embeddings")
 
-        print(f"Adding {len(documents)} documents to vector store...")
+        if not isinstance(embeddings, np.ndarray):
+            raise TypeError("Embeddings must be a numpy.ndarray")
+
+        new_dim = embeddings.shape[1]
+
+        # If collection has existing documents, check dimension
+        if self.collection.count() > 0:
+            try:
+                first_emb = self.collection.get(ids=[self.collection.get()[0]['id']])['embeddings'][0]
+                self.embedding_dim = len(first_emb)
+                if self.embedding_dim != new_dim:
+                    print(f"Dimension mismatch: collection has {self.embedding_dim}, got {new_dim}. Recreating collection...")
+                    self.client.delete_collection(self.collection_name)
+                    self.collection = self.client.create_collection(
+                        name=self.collection_name,
+                        metadata={"description": "PDF document embeddings for RAG"}
+                    )
+                    self.embedding_dim = new_dim
+                    print(f"New collection created with embedding dimension {new_dim}")
+            except Exception:
+                self.embedding_dim = new_dim
+        else:
+            # Empty collection → set embedding_dim
+            self.embedding_dim = new_dim
+
+        print(f"Adding {len(documents)} documents with dimension {new_dim} to vector store...")
 
         ids, metadatas, documents_text, embeddings_list = [], [], [], []
 
@@ -174,11 +203,13 @@ class VectorStore:
                 metadatas=metadatas,
                 documents=documents_text
             )
-            print(f"Successfully added {len(documents)} documents to vector store")
+            print(f"Successfully added {len(documents)} documents")
             print(f"Total documents in collection: {self.collection.count()}")
         except Exception as e:
             print(f"Error adding documents to vector store: {e}")
             raise
+
+
 
 
 class RAGRetriever:
