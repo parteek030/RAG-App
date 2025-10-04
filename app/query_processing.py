@@ -4,17 +4,12 @@ from langchain.document_loaders import TextLoader, DirectoryLoader, PyPDFLoader,
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from pathlib import Path
 import numpy as np
-from sentence_transformers import SentenceTransformer
 import chromadb
 from chromadb.config import Settings
 import uuid
 from typing import List, Dict, Any
 from sklearn.metrics.pairwise import cosine_similarity
-from langchain_groq import ChatGroq
 from dotenv import load_dotenv
-from groq import Groq
-from transformers import AutoTokenizer, AutoModel
-import torch
 import numpy as np
 from langchain_cohere.embeddings import CohereEmbeddings
 
