@@ -1,17 +1,19 @@
 from langchain.docstore.document import Document
 import os
-from langchain.document_loaders import TextLoader, DirectoryLoader, PyPDFLoader, PyMuPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from pathlib import Path
 import numpy as np
 import chromadb
+from langchain_community.document_loaders import TextLoader,DirectoryLoader,PyMuPDFLoader,PyPDFLoader
 from chromadb.config import Settings
 import uuid
 from typing import List, Dict, Any
 from sklearn.metrics.pairwise import cosine_similarity
 from dotenv import load_dotenv
 import numpy as np
-from langchain_cohere.embeddings import CohereEmbeddings
+
+from langchain.embeddings import CohereEmbeddings
+
 
 
 class Preprocessing:
