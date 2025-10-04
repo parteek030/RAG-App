@@ -12,8 +12,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from dotenv import load_dotenv
 import numpy as np
 
-from langchain.embeddings import CohereEmbeddings
-
+from langchain_cohere.embeddings import CohereEmbeddings
 
 
 class Preprocessing:

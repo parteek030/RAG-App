@@ -15,4 +15,5 @@ pydantic
 python-multipart
 cohere
 langchain-community
+langchain-cohere
 
