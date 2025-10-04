@@ -4,33 +4,37 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 from typing import List
 import os
+import shutil
 from langchain_groq import ChatGroq
 from app.query_processing import Preprocessing, EmbeddingManager, VectorStore, RAGRetriever, RAG
 
 app = FastAPI()
 
-# --- Serve frontend ---
-app.mount("/static", StaticFiles(directory="."), name="static")
+# --- Absolute paths for safety ---
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
+INDEX_FILE = os.path.join(BASE_DIR, "index.html")
+STATIC_FOLDER = os.path.join(BASE_DIR, "static")
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+# --- Serve frontend ---
+if os.path.exists(STATIC_FOLDER):
+    app.mount("/static", StaticFiles(directory=STATIC_FOLDER), name="static")
 
 @app.get("/", response_class=HTMLResponse)
 def serve_frontend():
+    if not os.path.exists(INDEX_FILE):
+        return HTMLResponse("<h1>Frontend file not found!</h1>", status_code=500)
     try:
-        with open("index.html", "r", encoding="utf-8") as f:
+        with open(INDEX_FILE, "r", encoding="utf-8") as f:
             return f.read()
     except Exception as e:
         return HTMLResponse(f"<h1>Error loading frontend: {str(e)}</h1>", status_code=500)
 
-
-# --- Upload folder ---
-UPLOAD_FOLDER = "uploads"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-# --- Global objects for processed PDFs ---
-embedding_manager: EmbeddingManager 
-vectorstore: VectorStore 
-processed_documents = []
-
+# --- Global objects ---
+embedding_manager: EmbeddingManager | None = None
+vectorstore: VectorStore | None = None
+processed_documents: list = []
 
 # --- Step 1: Upload PDFs ---
 @app.post("/upload-multiple")
@@ -40,10 +44,15 @@ async def upload_multiple(files: List[UploadFile] = File(...)):
     if not files:
         return JSONResponse({"error": "No files uploaded."}, status_code=400)
 
-    processed_documents = []  # reset
-    uploaded_files = []
-
     try:
+        # --- Clear existing uploads safely ---
+        if os.path.exists(UPLOAD_FOLDER):
+            shutil.rmtree(UPLOAD_FOLDER)
+        os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+        processed_documents = []  # reset
+        uploaded_files = []
+
         # Save uploaded PDFs
         for file in files:
             file_path = os.path.join(UPLOAD_FOLDER, file.filename)
@@ -51,6 +60,8 @@ async def upload_multiple(files: List[UploadFile] = File(...)):
                 content = await file.read()
                 f.write(content)
             uploaded_files.append({"filename": file.filename, "path": file_path})
+
+        print(f"Uploaded {len(uploaded_files)} files.")
 
         # Process all PDFs
         documents = Preprocessing.process_all_pdfs(UPLOAD_FOLDER)
@@ -61,11 +72,10 @@ async def upload_multiple(files: List[UploadFile] = File(...)):
         vectorstore = VectorStore()
 
         texts = [doc.page_content for doc in chunks]
-        
         embeddings = embedding_manager.generate_embeddings(texts)
         vectorstore.add_documents(chunks, embeddings)
 
-        processed_documents = documents  # store for reference
+        processed_documents = documents
 
         return {
             "message": "Files uploaded and processed successfully",
@@ -75,11 +85,9 @@ async def upload_multiple(files: List[UploadFile] = File(...)):
     except Exception as e:
         return JSONResponse({"error": f"Failed to process files: {str(e)}"}, status_code=500)
 
-
 # --- Step 2: Query endpoint ---
 class Query(BaseModel):
     text: str
-
 
 @app.post("/query")
 def query_rag(query: Query):
@@ -110,12 +118,12 @@ def query_rag(query: Query):
             min_score=0.1,
             return_context=True
         )
+        print(result.get("sources"))
 
         return {
             "Answer": result.get("answer"),
             "Sources": result.get("sources"),
-            "Confidence": result.get("confidence"),
-            # "Context Preview": result.get("context", "")[:300]
+            "Confidence": result.get("confidence")
         }
 
     except Exception as e:

@@ -113,9 +113,24 @@ queryBtn.addEventListener("click", async () => {
         const data = await response.json();
 
         if (response.ok) {
+            // --- Dynamically format Sources ---
+            let sourcesText = "N/A";
+            if (Array.isArray(data.Sources) && data.Sources.length > 0) {
+                sourcesText = data.Sources.map(src => {
+                    const keys = Object.keys(src).filter(k => k.toLowerCase() !== "text" && k.toLowerCase() !== "content");
+                    const mainInfo = keys.map(k => `${k}: ${src[k]}`).join(", ");
+
+                    let contentPreview = "";
+                    if (src.text) contentPreview = src.text.slice(0, 100) + "...";
+                    else if (src.content) contentPreview = src.content.slice(0, 100) + "...";
+
+                    return mainInfo ? `${mainInfo} — ${contentPreview}` : contentPreview;
+                }).join("<br>");
+            }
+
             outputDiv.innerHTML = `
                 <b>Answer:</b> ${data.Answer || "N/A"}<br>
-                <b>Sources:</b> ${data.Sources || "N/A"}<br>
+                <b>Sources:</b><br> ${sourcesText}<br>
                 <b>Confidence:</b> ${data.Confidence || "N/A"}
             `;
         } else {
