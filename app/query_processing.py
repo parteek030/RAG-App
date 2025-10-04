@@ -84,10 +84,13 @@ class EmbeddingManager:
 
     def _load_model(self):
 
+        dotenv_path = Path(__file__).resolve().parent.parent / ".env"
+        load_dotenv(dotenv_path)
+
         print(f"Loading embedding model: {self.model_name}")
         self.model = CohereEmbeddings(
             model=self.model_name,
-            cohere_api_key="WBdoRkET5pSXZ2dC6nlu3ZxgDSFL0L7A0MmrMipL"  # better to use env var!
+            cohere_api_key = os.getenv("COHERE_API_KEY") # better to use env var!
         )
         print("Model loaded successfully.")
     def generate_embeddings(self, texts: List[str]) -> np.ndarray:
