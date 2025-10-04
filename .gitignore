@@ -1,0 +1,24 @@
+# Environment variables
+.env
+
+# Virtual environment
+venv/
+env/
+
+# Python bytecode / cache
+__pycache__/
+*.py[cod]
+
+# Build / distribution folders
+build/
+dist/
+*.egg-info/
+
+# Logs
+*.log
+
+# Editor / OS specific files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
