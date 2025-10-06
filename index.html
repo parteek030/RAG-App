@@ -5,31 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PDF RAG Web App</title>
 <style>
-    body {
-        font-family: Arial, sans-serif;
-        margin: 20px;
-        background-color: #f2f2f2;
-    }
-    h1 {
-        color: #333;
-    }
-    input, button, textarea {
-        margin: 10px 0;
-        padding: 8px;
-        width: 100%;
-        box-sizing: border-box;
-    }
-    button:disabled {
-        background-color: #ccc;
-        cursor: not-allowed;
-    }
-    .output {
-        margin-top: 20px;
-        background: #fff;
-        padding: 15px;
-        border-radius: 8px;
-        box-shadow: 0 0 5px rgba(0,0,0,0.1);
-    }
+    body { font-family: Arial, sans-serif; margin: 20px; background-color: #f2f2f2; }
+    h1 { color: #333; }
+    input, button, textarea { margin: 10px 0; padding: 8px; width: 100%; box-sizing: border-box; }
+    button:disabled { background-color: #ccc; cursor: not-allowed; }
+    .output { margin-top: 20px; background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 0 5px rgba(0,0,0,0.1); }
 </style>
 </head>
 <body>
@@ -53,18 +33,28 @@ const queryText = document.getElementById("queryText");
 const pdfFiles = document.getElementById("pdfFiles");
 const outputDiv = document.getElementById("output");
 
-let pdfsUploaded = false;
+let accumulatedFiles = [];
+
+// --- Accumulate selected files ---
+pdfFiles.addEventListener("change", (event) => {
+    for (const file of event.target.files) {
+        // Prevent duplicates
+        if (!accumulatedFiles.some(f => f.name === file.name && f.size === file.size)) {
+            accumulatedFiles.push(file);
+        }
+    }
+    console.log("Accumulated files:", accumulatedFiles.map(f => f.name));
+});
 
 // --- Upload PDFs ---
 uploadBtn.addEventListener("click", async () => {
-    const files = pdfFiles.files;
-    if (!files.length) {
+    if (accumulatedFiles.length === 0) {
         alert("Please select PDF files to upload.");
         return;
     }
 
     const formData = new FormData();
-    for (let file of files) {
+    for (let file of accumulatedFiles) {
         formData.append("files", file);
     }
 
@@ -80,9 +70,10 @@ uploadBtn.addEventListener("click", async () => {
 
         if (response.ok) {
             outputDiv.innerHTML = `<b>Files processed:</b> ${data.files.join(", ")}`;
-            pdfsUploaded = true;
             queryText.disabled = false;
             queryBtn.disabled = false;
+            // Optional: clear accumulated files if you want
+            // accumulatedFiles = [];
         } else {
             outputDiv.innerHTML = `<b>Error:</b> ${data.error}`;
         }
@@ -104,26 +95,21 @@ queryBtn.addEventListener("click", async () => {
     try {
         const response = await fetch("/query", {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ text: query })
         });
 
         const data = await response.json();
 
         if (response.ok) {
-            // --- Dynamically format Sources ---
             let sourcesText = "N/A";
             if (Array.isArray(data.Sources) && data.Sources.length > 0) {
                 sourcesText = data.Sources.map(src => {
                     const keys = Object.keys(src).filter(k => k.toLowerCase() !== "text" && k.toLowerCase() !== "content");
                     const mainInfo = keys.map(k => `${k}: ${src[k]}`).join(", ");
-
                     let contentPreview = "";
                     if (src.text) contentPreview = src.text.slice(0, 100) + "...";
                     else if (src.content) contentPreview = src.content.slice(0, 100) + "...";
-
                     return mainInfo ? `${mainInfo} — ${contentPreview}` : contentPreview;
                 }).join("<br>");
             }

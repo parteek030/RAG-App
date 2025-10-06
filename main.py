@@ -107,7 +107,7 @@ def query_rag(query: Query):
 
         llm = ChatGroq(
             groq_api_key=groq_api_key,
-            model_name="gemma2-9b-it",
+            model_name="openai/gpt-oss-20b",
             temperature=0.1,
             max_tokens=1024
         )
