@@ -10,6 +10,7 @@
     input, button, textarea { margin: 10px 0; padding: 8px; width: 100%; box-sizing: border-box; }
     button:disabled { background-color: #ccc; cursor: not-allowed; }
     .output { margin-top: 20px; background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 0 5px rgba(0,0,0,0.1); }
+    ul { padding-left: 20px; }
 </style>
 </head>
 <body>
@@ -18,6 +19,7 @@
 
 <h3>Step 1: Upload PDFs</h3>
 <input type="file" id="pdfFiles" multiple accept=".pdf">
+<ul id="selectedFilesList"></ul>
 <button id="uploadBtn">Upload & Process PDFs</button>
 
 <h3>Step 2: Query</h3>
@@ -32,19 +34,35 @@ const queryBtn = document.getElementById("queryBtn");
 const queryText = document.getElementById("queryText");
 const pdfFiles = document.getElementById("pdfFiles");
 const outputDiv = document.getElementById("output");
+const selectedFilesList = document.getElementById("selectedFilesList");
 
+// Array to store all selected PDFs
 let accumulatedFiles = [];
 
-// --- Accumulate selected files ---
+// --- When user selects files ---
 pdfFiles.addEventListener("change", (event) => {
-    for (const file of event.target.files) {
-        // Prevent duplicates
+    const newFiles = Array.from(event.target.files);
+
+    // Add new files to accumulatedFiles, preventing duplicates
+    newFiles.forEach(file => {
         if (!accumulatedFiles.some(f => f.name === file.name && f.size === file.size)) {
             accumulatedFiles.push(file);
         }
-    }
-    console.log("Accumulated files:", accumulatedFiles.map(f => f.name));
+    });
+
+    // Update the displayed list
+    renderSelectedFiles();
 });
+
+// --- Function to render selected files ---
+function renderSelectedFiles() {
+    selectedFilesList.innerHTML = "";
+    accumulatedFiles.forEach(file => {
+        const li = document.createElement("li");
+        li.textContent = file.name;
+        selectedFilesList.appendChild(li);
+    });
+}
 
 // --- Upload PDFs ---
 uploadBtn.addEventListener("click", async () => {
@@ -54,9 +72,7 @@ uploadBtn.addEventListener("click", async () => {
     }
 
     const formData = new FormData();
-    for (let file of accumulatedFiles) {
-        formData.append("files", file);
-    }
+    accumulatedFiles.forEach(file => formData.append("files", file));
 
     outputDiv.innerHTML = "Uploading and processing PDFs...";
 
@@ -72,8 +88,9 @@ uploadBtn.addEventListener("click", async () => {
             outputDiv.innerHTML = `<b>Files processed:</b> ${data.files.join(", ")}`;
             queryText.disabled = false;
             queryBtn.disabled = false;
-            // Optional: clear accumulated files if you want
+            // Optionally clear accumulated files after upload:
             // accumulatedFiles = [];
+            // renderSelectedFiles();
         } else {
             outputDiv.innerHTML = `<b>Error:</b> ${data.error}`;
         }

@@ -4,7 +4,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from pathlib import Path
 import numpy as np
 import chromadb
-from langchain_community.document_loaders import TextLoader,DirectoryLoader,PyMuPDFLoader,PyPDFLoader
+from langchain_community.document_loaders import PyPDFLoader
 from chromadb.config import Settings
 import uuid
 from typing import List, Dict, Any
@@ -209,8 +209,6 @@ class VectorStore:
             raise
 
 
-
-
 class RAGRetriever:
     """Handles query-based retrieval from the vector store"""
 
@@ -219,27 +217,35 @@ class RAGRetriever:
         self.embedding_manager = embedding_manager
 
     def retrieve(self, query: str, top_k: int = 5, score_threshold: float = 0.0) -> List[Dict[str, Any]]:
-        print(f"Retrieving documents for query: '{query}'")
-        print(f"Top K: {top_k}, Score threshold: {score_threshold}")
+        print(f"\n🔍 Retrieving for query: '{query}'")
+        print(f"Top K = {top_k}, Threshold = {score_threshold}")
 
         query_embedding = self.embedding_manager.generate_embeddings([query])[0]
+        print(f"Embedding shape: {len(query_embedding)}")
 
         try:
             results = self.vector_store.collection.query(
                 query_embeddings=[query_embedding.tolist()],
                 n_results=top_k
             )
+            print("Raw results:", results)
 
             retrieved_docs = []
 
-            if results['documents'] and results['documents'][0]:
+            if results.get('documents') and results['documents'][0]:
                 documents = results['documents'][0]
                 metadatas = results['metadatas'][0]
                 distances = results['distances'][0]
                 ids = results['ids'][0]
 
+                # detect metric type
+                if all(d <= 1 for d in distances):  # probably cosine distance
+                    invert = True
+                else:
+                    invert = False
+
                 for i, (doc_id, document, metadata, distance) in enumerate(zip(ids, documents, metadatas, distances)):
-                    similarity_score = 1 - distance
+                    similarity_score = (1 - distance) if invert else distance
                     if similarity_score >= score_threshold:
                         retrieved_docs.append({
                             'id': doc_id,
@@ -250,15 +256,16 @@ class RAGRetriever:
                             'rank': i + 1
                         })
 
-                print(f"Retrieved {len(retrieved_docs)} documents (after filtering)")
+                print(f"✅ Retrieved {len(retrieved_docs)} documents after filtering.")
             else:
-                print("No documents found")
+                print("⚠️ No documents found in query results.")
 
             return retrieved_docs
 
         except Exception as e:
-            print(f"Error during retrieval: {e}")
+            print(f"❌ Retrieval error: {e}")
             return []
+
 
 
 class RAG:
@@ -278,7 +285,11 @@ class RAG:
 
         confidence = max([doc['similarity_score'] for doc in results])
 
-        prompt = f"""Use the following context to answer the question concisely.\nContext:\n{context}\n\nQuestion: {query}\n\nAnswer:"""
+        prompt = f"""You are a helpful assistant. Use the context to answer clearly.
+Context: {context}
+Question: {query}
+Answer:
+"""
         response = llm.invoke([prompt])
 
         output = {

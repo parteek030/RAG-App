@@ -38,6 +38,7 @@ processed_documents: list = []
 
 # --- Step 1: Upload PDFs ---
 # --- Step 1: Upload PDFs ---
+
 @app.post("/upload-multiple")
 async def upload_multiple(files: List[UploadFile] = File(...)):
     global embedding_manager, vectorstore, processed_documents
@@ -54,34 +55,39 @@ async def upload_multiple(files: List[UploadFile] = File(...)):
         processed_documents = []  # reset
         uploaded_files = []
 
-        # Save uploaded PDFs
+        # --- Save uploaded PDFs ---
         for file in files:
+            if not file.filename.lower().endswith(".pdf"):
+                raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
             file_path = os.path.join(UPLOAD_FOLDER, file.filename)
             with open(file_path, "wb") as f:
                 content = await file.read()
                 f.write(content)
             uploaded_files.append({"filename": file.filename, "path": file_path})
 
-        # Process PDFs
+        # --- Process PDFs into text chunks ---
         documents = Preprocessing.process_all_pdfs(UPLOAD_FOLDER)
         chunks = Preprocessing.split_documents(documents)
-        print(chunks)
+        if vectorstore and vectorstore.collection:
+            try:
+                print("Deleting old vector store...")
+                vectorstore.client.delete_collection(name=vectorstore.collection_name)
+            except Exception as e:
+                print(f"Warning: failed to delete previous vector store: {e}")
 
-        # Check if embedding_manager exists; if not, create it
-        if embedding_manager is None:
-            embedding_manager = EmbeddingManager()
+        # --- Always create a new embedding manager and vector store ---
+        embedding_manager = EmbeddingManager()
+        vectorstore = VectorStore()  # ✅ new store per upload batch
 
-        # Check if vector_store exists; if not, create it
-        if vectorstore is None:
-            vectorstore = VectorStore()
-            
+        # --- Embed and store documents ---
         texts_to_embed = [doc.page_content for doc in chunks]
-        embeddings=embedding_manager.generate_embeddings(texts_to_embed)
-        vectorstore.add_documents(chunks,embeddings)
-    
+        embeddings = embedding_manager.generate_embeddings(texts_to_embed)
+        vectorstore.add_documents(chunks, embeddings)
+
         return {
-            "message": "Files uploaded and processed successfully",
-            "files": [f["filename"] for f in uploaded_files]
+            "message": "Files uploaded and processed successfully (new vector store created)",
+            "files": [f["filename"] for f in uploaded_files],
+            "chunks": len(chunks)
         }
 
     except Exception as e:
@@ -116,8 +122,8 @@ def query_rag(query: Query):
             query.text,
             rag_retriever,
             llm,
-            top_k=1,
-            min_score=0.1,
+            top_k=5,
+            min_score=0.0,
             return_context=True
         )
         print(result.get("sources"))
